@@ -10,7 +10,7 @@ jobs:
   scan:
     uses: PRACHIT27/SecureGateway/.github/workflows/reusable-scan.yml@main
     with:
-      ecr-repo: 772312904084.dkr.ecr.us-east-1.amazonaws.com
+      ecr-repo: 772312904084.dkr.ecr.us-east-1.amazonaws.com/securegateway
       s3-bucket: securegateway-reports-772312904084
     secrets:
       api-gateway-url: ${{ secrets.SECUREGATEWAY_API_URL }}

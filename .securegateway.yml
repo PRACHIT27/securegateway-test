@@ -1,0 +1,9 @@
+api:
+  port: 3000
+  start: "node test-target.js"
+  healthcheck: /health
+  endpoints:
+    - path: /api/users
+      method: GET
+    - path: /api/login
+      method: POST

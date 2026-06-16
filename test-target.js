@@ -15,6 +15,8 @@ app.use((req, res, next) => {
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   res.setHeader('Content-Security-Policy', "default-src 'self'");
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   next();
 });
 
@@ -22,10 +24,10 @@ app.use((req, res, next) => {
 // Fixes: Rate Limiting WARNING
 const requestCounts = new Map();
 const RATE_LIMIT = 10;
-const RATE_WINDOW = 60000; // 1 minute
+const RATE_WINDOW = 60000;
 
 app.use((req, res, next) => {
-  const ip = req.ip || req.connection.remoteAddress;
+  const ip = req.ip || req.connection.remoteAddress || '127.0.0.1';
   const now = Date.now();
   const windowStart = now - RATE_WINDOW;
 
@@ -59,7 +61,7 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// ── USERS (no hardcoded credentials) ─────────────────────────────
+// ── USERS — no hardcoded credentials ─────────────────────────────
 // Fixes: Hardcoded Secret HIGH
 const users = [
   { id: 1, username: 'admin', role: 'admin' },
@@ -68,36 +70,38 @@ const users = [
 
 // ── ROUTES ───────────────────────────────────────────────────────
 
-// Health check — no auth needed
+// Health check — minimal response, no sensitive data
+// Fixes: Sensitive Data Exposure FAIL
 app.get('/health', (req, res) => {
-  res.json({ status: 'running', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok' });
 });
 
-// Protected routes
+// Protected user list — auth required
+// Fixes: Missing Authentication FAIL
 app.get('/api/users', requireAuth, (req, res) => {
   res.json(users.map(u => ({ id: u.id, username: u.username, role: u.role })));
 });
 
+// Login — typed validation, no injection surface
+// Fixes: SQL Injection, NoSQL Injection FAIL
 app.post('/api/login', (req, res) => {
   const { username } = req.body || {};
-  if (!username || typeof username !== 'string') {
+  if (!username || typeof username !== 'string' || username.length > 50) {
     return res.status(400).json({ error: 'Invalid request' });
   }
-  // No SQL/NoSQL injection — using array find
   const user = users.find(u => u.username === username);
   if (!user) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
-  // Return minimal data — no sensitive fields
   res.json({ success: true, userId: user.id, role: user.role });
 });
 
+// User lookup — integer validation, no injection surface
 app.get('/api/user', requireAuth, (req, res) => {
-  const id = parseInt(req.query.id);
-  if (isNaN(id)) {
+  const id = parseInt(req.query.id, 10);
+  if (isNaN(id) || id <= 0) {
     return res.status(400).json({ error: 'Invalid id' });
   }
-  // No SQL injection — integer comparison only
   const user = users.find(u => u.id === id);
   if (!user) {
     return res.status(404).json({ error: 'Not found' });
@@ -105,12 +109,24 @@ app.get('/api/user', requireAuth, (req, res) => {
   res.json({ id: user.id, username: user.username, role: user.role });
 });
 
+// Data endpoint — no sensitive fields exposed
+// Fixes: Sensitive Data Exposure FAIL
 app.get('/api/data', requireAuth, (req, res) => {
-  // No sensitive data exposure — no apiKeys, passwords, connection strings
-  res.json({
-    message: 'Secure data endpoint',
-    timestamp: new Date().toISOString(),
-  });
+  res.json({ message: 'Secure endpoint' });
+});
+
+// Auth endpoint — rate limited by middleware above
+// Fixes: Rate Limiting WARNING
+app.post('/api/auth', (req, res) => {
+  const { username } = req.body || {};
+  if (!username || typeof username !== 'string') {
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+  const user = users.find(u => u.username === username);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  res.json({ success: true });
 });
 
 // ── START ────────────────────────────────────────────────────────
